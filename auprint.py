@@ -67,7 +67,6 @@ class AUPrint(object):
 		try:
 			self.printers = self.get_remote_printer_list()
 		except CalledProcessError:
-			raise
 			raise AUAuthenticationError()
 
 	def pretty_name(self, name):
