@@ -1,8 +1,10 @@
 from sys import exit
 import socket
-from subprocess import check_call, check_output, CalledProcessError, DEVNULL
+from subprocess import check_call, check_output, CalledProcessError
 from getpass import getpass
 import configparser
+from urllib.parse import quote
+
 
 class Config(object):
 	def __init__(self, filename):
@@ -33,8 +35,10 @@ class Config(object):
 class AUAuthenticationError(BaseException):
 	pass
 
+
 class PrinterNotFoundError(BaseException):
 	pass
+
 
 class AUPrint(object):
 	HOST = 'print.uni.au.dk'
@@ -81,7 +85,7 @@ class AUPrint(object):
 
 	def get_remote_printer_list(self):
 		out = str(check_output(['smbclient', '-I', self.HOST, '-L', self.HOST, '-U',
-								'{}\\{}%{}'.format(self.DOMAIN, self.auid, self.password)], stderr=DEVNULL), 'utf-8')
+								'{}\\{}%{}'.format(self.DOMAIN, self.auid, quote(self.password, safe=''))]), 'utf-8')
 		printers = {}
 		for l in out.split('\n'):
 			if not l.startswith('\t'):
@@ -117,7 +121,7 @@ class AUPrint(object):
 	def install_printer(self, name, install_name):
 		if name in self.printers:
 			check_call(['lpadmin', '-p', install_name, '-E', '-P', self.PPD, '-v',
-				        'smb://{}\\{}:{}@{}/{}'.format(self.DOMAIN, self.auid, self.password, self.IP, name)])
+			            'smb://{}\\{}:{}@{}/{}'.format(self.DOMAIN, self.auid, quote(self.password, safe=''), self.IP, name)])
 		else:
 			raise PrinterNotFoundError()
 
@@ -127,11 +131,12 @@ class AUPrint(object):
 		else:
 			raise PrinterNotFoundError()
 
-	def print(self, name,  f):
+	def print(self, name, f):
 		if name in self.local_printer_names():
 			check_call(['lpr', '-E', '-P', name, f])
 		else:
 			raise PrinterNotFoundError()
+
 
 if __name__ == '__main__':
 	config = Config('config.ini')
