@@ -4,6 +4,7 @@ from subprocess import check_call, check_output, CalledProcessError
 from getpass import getpass
 import configparser
 from urllib.parse import quote
+import argparse
 
 
 class Config(object):
@@ -103,16 +104,24 @@ class AUPrint(object):
 
 		return printers
 
-	def local_printer_names(self):
+	def printer_url(self, name):
+		return 'smb://{}\\{}:{}@{}/{}'.format(self.DOMAIN, self.auid, quote(self.password, safe=''), self.IP, name)
+
+	def update_authentication(self, name, install_name):
+		check_call(['lpadmin', '-p', install_name, '-v', self.printer_url(name)])
+
+	def get_local_printers(self):
 		try:
-			out = str(check_output(['lpstat', '-p']), 'utf-8')
+			out = str(check_output(['lpstat', '-v']), 'utf-8').strip()
 			printers = []
 			for l in out.split('\n'):
-				if not l.startswith('printer'):
+				url = l.split()[-1]
+				if not url.startswith('smb://{}/'.format(self.IP)):
 					continue
 
-				name = l.split()[1]
-				printers.append(name)
+				name = url.split('/')[-1]
+				install_name = l.split()[2].split(':')[0]
+				printers.append((name, install_name))
 
 			return printers
 		except CalledProcessError:
@@ -121,7 +130,7 @@ class AUPrint(object):
 	def install_printer(self, name, install_name):
 		if name in self.printers:
 			check_call(['lpadmin', '-p', install_name, '-E', '-P', self.PPD, '-v',
-			            'smb://{}\\{}:{}@{}/{}'.format(self.DOMAIN, self.auid, quote(self.password, safe=''), self.IP, name)])
+			            self.printer_url(name)])
 		else:
 			raise PrinterNotFoundError()
 
@@ -139,6 +148,11 @@ class AUPrint(object):
 
 
 if __name__ == '__main__':
+	parser = argparse.ArgumentParser(description='Manages installed printers at AU')
+	parser.add_argument('--update-passwords', action='store_true', help='Update passwords used for printers')
+
+	args = parser.parse_args()
+
 	config = Config('config.ini')
 
 	logged_in = False
@@ -161,36 +175,42 @@ if __name__ == '__main__':
 
 	printers = auprint.get_remote_printer_list()
 
-	building = input('Building number/name: ')
-	building_number = AUPrint.BUILDING_NUMBERS.get(building, building)
-
-	matched_printers = [p for p in printers if p.startswith(building_number)]
-	if len(matched_printers) == 0:
-		print('No printers found')
+	if args.update_passwords:
+		printers = auprint.get_local_printers()
+		for name, install_name in printers:
+			auprint.update_authentication(name, install_name)
+			print('Updated password for {} at {}'.format(name, install_name))
 	else:
-		print('Available printers: ')
-		for i, p in enumerate(matched_printers):
-			print('(%s)\t%s' % (i + 1, p))
+		building = input('Building number/name: ')
+		building_number = AUPrint.BUILDING_NUMBERS.get(building, building)
 
-		opt = input('Printer to install: ')
-		try:
-			opt = int(opt)
-		except ValueError:
-			exit()
+		matched_printers = [p for p in printers if p.startswith(building_number)]
+		if len(matched_printers) == 0:
+			print('No printers found')
+		else:
+			print('Available printers: ')
+			for i, p in enumerate(matched_printers):
+				print('(%s)\t%s' % (i + 1, p))
 
-		opt -= 1
-		if not (0 <= opt < len(matched_printers)):
-			exit()
+			opt = input('Printer to install: ')
+			try:
+				opt = int(opt)
+			except ValueError:
+				exit()
 
-		printer = matched_printers[opt]
-		name = auprint.pretty_name(printer)
+			opt -= 1
+			if not (0 <= opt < len(matched_printers)):
+				exit()
 
-		print()
-		print('Selected', printer)
-		custom_name = input('Install name [%s]: ' % name)
-		if custom_name:
-			name = custom_name
+			printer = matched_printers[opt]
+			name = auprint.pretty_name(printer)
 
-		auprint.install_printer(printer, name)
+			print()
+			print('Selected', printer)
+			custom_name = input('Install name [%s]: ' % name)
+			if custom_name:
+				name = custom_name
 
-		print('Successfully added printer %s as %s' % (printer, name))
+			auprint.install_printer(printer, name)
+
+			print('Successfully added printer %s as %s' % (printer, name))
