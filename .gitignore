@@ -1,5 +1,5 @@
 venv/
 __pycache__
 *.pyc
-config.ini
+auid.txt
 

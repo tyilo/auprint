@@ -4,35 +4,43 @@ from sys import exit
 import socket
 from subprocess import check_call, check_output, CalledProcessError
 from getpass import getpass
-import configparser
 from urllib.parse import quote
 import argparse
+import keyring
+from pathlib import Path
 
 
-class Config(object):
+class LocalAuth:
 	def __init__(self, filename):
-		self._cp = configparser.ConfigParser()
-		self._filename = filename
-		self._cp.read(filename)
+		self.filename = filename
+		try:
+			with open(filename) as f:
+				self.username = f.read().strip()
+		except IOError:
+			self.username = None
+
+		self.password = keyring.get_password('auprint', 'auid')
 
 	def __setattr__(self, key, value):
-		if key.startswith('_'):
-			super().__setattr__(key, value)
-			return
+		super().__setattr__(key, value)
 
-		if value is None:
-			self._cp.remove_option(self._cp.default_section, key)
-		else:
-			self._cp.set(self._cp.default_section, key, value)
-
-		with open(self._filename, 'w') as f:
-			self._cp.write(f)
-
-	def __getattribute__(self, key):
-		if key.startswith('_'):
-			return super().__getattribute__(key)
-
-		return self._cp.get(self._cp.default_section, key, fallback=None)
+		if key == 'username':
+			try:
+				if value == None:
+					Path(self.filename).unlink()
+				else:
+					with open(self.filename, 'w') as f:
+						f.write(self.username)
+			except IOError:
+				pass
+		elif key == 'password':
+			if value == None:
+				try:
+					keyring.delete_password('auprint', 'auid')
+				except keyring.errors.PasswordDeleteError:
+					pass
+			else:
+				keyring.set_password('auprint', 'auid', value)
 
 
 class AUAuthenticationError(BaseException):
@@ -43,7 +51,7 @@ class PrinterNotFoundError(BaseException):
 	pass
 
 
-class AUPrint(object):
+class AUPrint:
 	HOST = 'print.uni.au.dk'
 	IP = socket.gethostbyname(HOST)
 	PPD = '/usr/share/ppd/cupsfilters/Generic-PDF_Printer-PDF.ppd'
@@ -155,25 +163,25 @@ if __name__ == '__main__':
 
 	args = parser.parse_args()
 
-	config = Config('config.ini')
+	auth = LocalAuth('auid.txt')
 
 	logged_in = False
 	while not logged_in:
-		while not config.auid:
-			config.auid = input('AUID: ').strip()
-			if not config.auid.startswith('au'):
-				config.auid = None
+		while not auth.username:
+			auth.username = input('AUID: ').strip()
+			if not auth.username.startswith('au'):
+				auth.username = None
 
-		while not config.password:
-			config.password = getpass().strip()
+		while not auth.password:
+			auth.password = getpass().strip()
 
 		try:
-			auprint = AUPrint(config.auid, config.password)
+			auprint = AUPrint(auth.username, auth.password)
 			logged_in = True
 		except AUAuthenticationError:
 			print('Invalid auid/password combination')
-			config.auid = None
-			config.password = None
+			auth.username = None
+			auth.password = None
 
 	printers = auprint.get_remote_printer_list()
 
