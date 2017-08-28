@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from sys import exit
 import socket
 from subprocess import check_call, check_output, CalledProcessError
