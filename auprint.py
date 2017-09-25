@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 from sys import exit
+from os import environ
 import socket
 from subprocess import check_call, check_output, CalledProcessError
 from getpass import getpass
-from urllib.parse import quote
+import re
 import argparse
 import keyring
 from pathlib import Path
@@ -95,8 +96,10 @@ class AUPrint:
 		return '%s-%s' % (building, number)
 
 	def get_remote_printer_list(self):
+		new_env = environ.copy()
+		new_env['PASSWD'] = self.password
 		out = str(check_output(['smbclient', '-I', self.HOST, '-L', self.HOST, '-U',
-								'{}\\{}%{}'.format(self.DOMAIN, self.auid, quote(self.password, safe=''))]), 'utf-8')
+								'{}\\{}'.format(self.DOMAIN, self.auid)], env=new_env), 'utf-8')
 		printers = {}
 		for l in out.split('\n'):
 			if not l.startswith('\t'):
@@ -115,7 +118,7 @@ class AUPrint:
 		return printers
 
 	def printer_url(self, name):
-		return 'smb://{}\\{}:{}@{}/{}'.format(self.DOMAIN, self.auid, quote(self.password, safe=''), self.IP, name)
+		return 'smb://{}\\{}:{}@{}/{}'.format(self.DOMAIN, self.auid, re.escape(self.password), self.IP, name)
 
 	def update_authentication(self, name, install_name):
 		check_call(['lpadmin', '-p', install_name, '-v', self.printer_url(name)])
