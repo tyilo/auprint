@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 
-from sys import exit
+from sys import exit, stderr
 from os import environ
 import socket
 from subprocess import check_call, check_output, CalledProcessError
 from getpass import getpass
 import re
 import argparse
-import keyring
 from pathlib import Path
+
+try:
+	import keyring
+except ImportError:
+	print('''To avoid having to enter your password every time you use auprint
+install the python keyring module using `pip install keyring`.''', file=stderr)
+	keyring = None
 
 
 class LocalAuth:
@@ -20,7 +26,10 @@ class LocalAuth:
 		except IOError:
 			self.username = None
 
-		self.password = keyring.get_password('auprint', 'auid')
+		if keyring:
+			self.password = keyring.get_password('auprint', 'auid')
+		else:
+			self.password = None
 
 	def __setattr__(self, key, value):
 		super().__setattr__(key, value)
@@ -35,6 +44,9 @@ class LocalAuth:
 			except IOError:
 				pass
 		elif key == 'password':
+			if not keyring:
+				return
+
 			if value == None:
 				try:
 					keyring.delete_password('auprint', 'auid')
@@ -176,7 +188,7 @@ if __name__ == '__main__':
 				auth.username = None
 
 		while not auth.password:
-			auth.password = getpass().strip()
+			auth.password = getpass('AU password: ').strip()
 
 		try:
 			auprint = AUPrint(auth.username, auth.password)
