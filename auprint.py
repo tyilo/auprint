@@ -5,7 +5,7 @@ from os import environ
 import socket
 from subprocess import check_call, check_output, CalledProcessError
 from getpass import getpass
-import re
+from urllib.parse import quote
 import argparse
 from pathlib import Path
 
@@ -130,7 +130,7 @@ class AUPrint:
 		return printers
 
 	def printer_url(self, name):
-		return 'smb://{}\\{}:{}@{}/{}'.format(self.DOMAIN, self.auid, re.escape(self.password), self.IP, name)
+		return 'smb://{}\\{}:{}@{}/{}'.format(self.DOMAIN, self.auid, quote(self.password, safe=''), self.IP, name)
 
 	def update_authentication(self, name, install_name):
 		check_call(['lpadmin', '-p', install_name, '-v', self.printer_url(name)])
