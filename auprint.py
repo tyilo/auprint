@@ -58,7 +58,6 @@ class AUPrint:
 	DOMAIN = 'uni'
 	BUILDING_NAMES = {
 		'1530': 'matematik',
-		'5365': 'stibitz',
 		'5335': 'nygaard',
 		'5340': 'babbage',
 		'5341': 'turing',
@@ -68,6 +67,7 @@ class AUPrint:
 		'5345': 'dreyer',
 		'5346': 'hopper',
 		'5347': 'wiener',
+		'5365': 'stibitz',
 	}
 	BUILDING_NUMBERS = {v: k for k, v in BUILDING_NAMES.items()}
 
