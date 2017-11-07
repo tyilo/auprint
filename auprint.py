@@ -17,6 +17,14 @@ install the python keyring module using `pip install keyring`.''', file=stderr)
 	keyring = None
 
 
+DEBUG = False
+
+
+def debugprint(*args, **kwargs):
+	if DEBUG:
+		print(*args, **kwargs)
+
+
 class LocalAuth:
 	def __init__(self, filename):
 		self.filename = filename
@@ -112,6 +120,7 @@ class AUPrint:
 		new_env['PASSWD'] = self.password
 		out = str(check_output(['smbclient', '-I', self.HOST, '-L', self.HOST, '-U',
 								'{}\\{}'.format(self.DOMAIN, self.auid)], env=new_env), 'utf-8')
+		debugprint(out)
 		printers = {}
 		for l in out.split('\n'):
 			if not l.startswith('\t'):
@@ -175,8 +184,11 @@ class AUPrint:
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Manages installed printers at AU')
 	parser.add_argument('--update-passwords', action='store_true', help='Update passwords used for printers')
+	parser.add_argument('--debug', action='store_true', help='Print debug info')
 
 	args = parser.parse_args()
+
+	DEBUG = args.debug
 
 	auth = LocalAuth('auid.txt')
 
