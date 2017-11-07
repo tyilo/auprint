@@ -218,7 +218,7 @@ if __name__ == '__main__':
 			auprint.update_authentication(name, install_name)
 			print('Updated password for {} at {}'.format(name, install_name))
 	else:
-		building = input('Building number/name: ')
+		building = input('Building number/name (empty for any): ').strip()
 		building_number = AUPrint.BUILDING_NUMBERS.get(building, building)
 
 		matched_printers = [p for p in printers if p.startswith(building_number)]
