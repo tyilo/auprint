@@ -2,6 +2,7 @@
 
 from sys import exit, stderr
 from os import environ
+from collections import defaultdict
 import socket
 from subprocess import check_call, check_output, CalledProcessError
 from getpass import getpass
@@ -75,7 +76,7 @@ class PrinterNotFoundError(BaseException):
 class AUPrint:
 	HOST = 'print.uni.au.dk'
 	IP = socket.gethostbyname(HOST)
-	PPD = '/usr/share/ppd/cupsfilters/Generic-PDF_Printer-PDF.ppd'
+	GENERIC_PPD = '/usr/share/ppd/cupsfilters/Generic-PDF_Printer-PDF.ppd'
 	DOMAIN = 'uni'
 	BUILDING_NAMES = {
 		'1530': 'matematik',
@@ -161,9 +162,11 @@ class AUPrint:
 		except CalledProcessError:
 			return []
 
-	def install_printer(self, name, install_name):
+	def install_printer(self, name, install_name, ppd=None):
+		if ppd == None:
+			ppd = self.GENERIC_PPD
 		if name in self.printers:
-			check_call(['lpadmin', '-p', install_name, '-E', '-P', self.PPD, '-v',
+			check_call(['lpadmin', '-p', install_name, '-E', '-P', ppd, '-v',
 			            self.printer_url(name)])
 		else:
 			raise PrinterNotFoundError()
@@ -179,6 +182,22 @@ class AUPrint:
 			check_call(['lpr', '-E', '-P', name, f])
 		else:
 			raise PrinterNotFoundError()
+
+
+def print_rows(rows, sep='  '):
+	maxlen = defaultdict(int)
+	for row in rows:
+		for i, v in enumerate(row):
+			maxlen[i] = max(maxlen[i], len(str(v)))
+
+	for row in rows:
+		for i, v in enumerate(row):
+			if i == len(row) - 1:
+				print(str(v))
+			else:
+				print(str(v).ljust(maxlen[i]), end=sep)
+
+	# print('(%s)\t%s\t%s' % (i + 1, p, matched_printers[p]))
 
 
 if __name__ == '__main__':
@@ -210,7 +229,7 @@ if __name__ == '__main__':
 			auth.username = None
 			auth.password = None
 
-	printers = auprint.get_remote_printer_list()
+	printers = auprint.printers
 
 	if args.update_passwords:
 		printers = auprint.get_local_printers()
@@ -221,15 +240,20 @@ if __name__ == '__main__':
 		building = input('Building number/name (empty for any): ').strip()
 		building_number = AUPrint.BUILDING_NUMBERS.get(building, building)
 
-		matched_printers = [p for p in printers if p.startswith(building_number)]
+		matched_printers = {p: d for p, d in printers.items() if p.startswith(building_number)}
 		if len(matched_printers) == 0:
 			print('No printers found')
 		else:
 			print('Available printers: ')
+			rows = []
+			printer_rid = []
 			for i, p in enumerate(matched_printers):
-				print('(%s)\t%s' % (i + 1, p))
+				rows.append(('(%s)' % (i + 1), p, matched_printers[p]))
+				printer_rid.append(p)
 
-			opt = input('Printer to install: ')
+			print_rows(rows)
+
+			opt = input('Printer to install: ').strip()
 			try:
 				opt = int(opt)
 			except ValueError:
@@ -239,15 +263,20 @@ if __name__ == '__main__':
 			if not (0 <= opt < len(matched_printers)):
 				exit()
 
-			printer = matched_printers[opt]
+			printer = printer_rid[opt]
 			name = auprint.pretty_name(printer)
 
 			print()
 			print('Selected', printer)
-			custom_name = input('Install name [%s]: ' % name)
+			custom_name = input('Install name [%s]: ' % name).strip()
 			if custom_name:
 				name = custom_name
 
-			auprint.install_printer(printer, name)
+			ppd = None
+			custom_ppd = input('PPD file [generic]: ').strip()
+			if custom_ppd:
+				ppd = custom_ppd
+
+			auprint.install_printer(printer, name, ppd)
 
 			print('Successfully added printer %s as %s' % (printer, name))
