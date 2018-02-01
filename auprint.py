@@ -4,12 +4,13 @@ from sys import exit, stderr
 from os import environ
 from collections import defaultdict
 import socket
-from subprocess import check_call, check_output, CalledProcessError
+from subprocess import check_call, check_output, CalledProcessError, DEVNULL
 from getpass import getpass
 from urllib.parse import quote
 import argparse
 from pathlib import Path
 from itertools import chain
+import random
 
 try:
 	import keyring
@@ -109,6 +110,28 @@ class AUPrint:
 			self.printers = self.get_remote_printer_list()
 		except CalledProcessError:
 			raise AUAuthenticationError()
+
+	def check_tools():
+		# Check smbclient
+		try:
+			check_call(['testparm', '--suppress-prompt'], stdout=DEVNULL, stderr=DEVNULL)
+		except CalledProcessError:
+			print('samba doesn\'t seem to be properly configured:', file=stderr)
+			print('Try creating /etc/samba/smb.conf', file=stderr)
+
+		# Check lpadmin
+		digits = 10
+		printer_name = '__auprint_test_%s' % random.randrange(10**digits, 10**(digits + 1))
+		try:
+			check_call(['lpadmin', '-p', printer_name, '-v', 'smb://example.org/auprint_test'], stdout=DEVNULL, stderr=DEVNULL)
+		except CalledProcessError:
+			print('CUPS doesn\'t seem to be properly configured:', file=stderr)
+			print('If you\'re using Ubuntu make sure you are in the group "lpadmin"', file=stderr)
+			print('If you\'re using Arch Linux make sure you are in the group "sys"', file=stderr)
+		finally:
+			check_call(['lpadmin', '-x', printer_name])
+
+		return None
 
 	def pretty_name(self, name):
 		parts = name.split('-')
@@ -210,6 +233,8 @@ if __name__ == '__main__':
 	parser.add_argument('--debug', action='store_true', help='Print debug info')
 
 	args = parser.parse_args()
+
+	AUPrint.check_tools()
 
 	DEBUG = args.debug
 
