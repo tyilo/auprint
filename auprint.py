@@ -9,6 +9,7 @@ from getpass import getpass
 from urllib.parse import quote
 import argparse
 from pathlib import Path
+from itertools import chain
 
 try:
 	import keyring
@@ -91,7 +92,10 @@ class AUPrint:
 		'5347': 'wiener',
 		'5365': 'stibitz',
 	}
-	BUILDING_NUMBERS = {v: k for k, v in BUILDING_NAMES.items()}
+	EXTRA_BUILDING_NAMES = {
+		'5343': 'studiecafeen',
+	}
+	BUILDING_NUMBERS = {v: k for k, v in chain(BUILDING_NAMES.items(), EXTRA_BUILDING_NAMES.items())}
 
 	auid = None
 	password = None
@@ -237,8 +241,20 @@ if __name__ == '__main__':
 			auprint.update_authentication(name, install_name)
 			print('Updated password for {} at {}'.format(name, install_name))
 	else:
+		known_buildings = sorted(AUPrint.BUILDING_NUMBERS.items(), key=lambda x: x[1])
+
+		print('Known building names:')
+		rows = []
+		for name, number in known_buildings:
+			rows.append(('', name, number))
+
+		print_rows(rows)
+
+		print()
 		building = input('Building number/name (empty for any): ').strip()
 		building_number = AUPrint.BUILDING_NUMBERS.get(building, building)
+
+		print()
 
 		matched_printers = {p: d for p, d in printers.items() if p.startswith(building_number)}
 		if len(matched_printers) == 0:
@@ -252,7 +268,7 @@ if __name__ == '__main__':
 				printer_rid.append(p)
 
 			print_rows(rows)
-
+			print()
 			opt = input('Printer to install: ').strip()
 			try:
 				opt = int(opt)
