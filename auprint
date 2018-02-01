@@ -126,8 +126,8 @@ class AUPrint:
 			check_call(['lpadmin', '-p', printer_name, '-v', 'smb://example.org/auprint_test'], stdout=DEVNULL, stderr=DEVNULL)
 		except CalledProcessError:
 			print('CUPS doesn\'t seem to be properly configured:', file=stderr)
-			print('If you\'re using Ubuntu make sure you are in the group "lpadmin"', file=stderr)
 			print('If you\'re using Arch Linux make sure you are in the group "sys"', file=stderr)
+			print('If you\'re using Ubuntu make sure you are in the group "lpadmin"', file=stderr)
 		finally:
 			check_call(['lpadmin', '-x', printer_name])
 
