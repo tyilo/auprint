@@ -4,13 +4,14 @@ from sys import exit, stderr
 from os import environ
 from collections import defaultdict
 import socket
-from subprocess import check_call, check_output, CalledProcessError, DEVNULL
+from subprocess import check_call, check_output, run, CalledProcessError, DEVNULL, PIPE
 from getpass import getpass
 from urllib.parse import quote
 import argparse
 from pathlib import Path
 from itertools import chain
 import random
+from shutil import which
 
 try:
 	import keyring
@@ -111,27 +112,42 @@ class AUPrint:
 		except CalledProcessError:
 			raise AUAuthenticationError()
 
-	def check_tools():
-		# Check smbclient
-		try:
-			check_call(['testparm', '--suppress-prompt'], stdout=DEVNULL, stderr=DEVNULL)
-		except CalledProcessError:
-			print('samba doesn\'t seem to be properly configured:', file=stderr)
-			print('Try creating /etc/samba/smb.conf', file=stderr)
+	@classmethod
+	def check_smbclient(cls):
+		if not which('smbclient'):
+			print('Error: smbclient command is not available, try installing smbclient', file=stderr)
+		else:
+			p = run(['smbclient'], stderr=PIPE)
+			if p.stderr.startswith(b'Usage:'):
+				return True
 
-		# Check lpadmin
-		digits = 10
-		printer_name = '__auprint_test_%s' % random.randrange(10**digits, 10**(digits + 1))
-		try:
-			check_call(['lpadmin', '-p', printer_name, '-v', 'smb://example.org/auprint_test'], stdout=DEVNULL, stderr=DEVNULL)
-		except CalledProcessError:
-			print('CUPS doesn\'t seem to be properly configured:', file=stderr)
-			print('If you\'re using Arch Linux make sure you are in the group "sys"', file=stderr)
-			print('If you\'re using Ubuntu make sure you are in the group "lpadmin"', file=stderr)
-		finally:
-			check_call(['lpadmin', '-x', printer_name])
+			stderr.buffer.write(p.stderr)
+			print('Error: smbclient doesn\'t seem to work, make sure /etc/samba/smb.conf exists', file=stderr)
 
-		return None
+		return False
+
+	@classmethod
+	def check_lpadmin(cls):
+		if not which('lpadmin'):
+			print('Error: lpadmin command is not available, try installing CUPS')
+		else:
+			digits = 10
+			printer_name = '__auprint_test_%s' % random.randrange(10**digits, 10**(digits + 1))
+			try:
+				check_call(['lpadmin', '-p', printer_name, '-v', 'smb://example.org/auprint_test'])
+				return True
+			except CalledProcessError:
+				print('Error: You don\'t seem to be able to use lpadmin:', file=stderr)
+				print('- If you\'re using Arch Linux make sure you are in the group "sys"', file=stderr)
+				print('- If you\'re using Ubuntu make sure you are in the group "lpadmin"', file=stderr)
+			finally:
+				check_call(['lpadmin', '-x', printer_name])
+
+		return False
+
+	@classmethod
+	def check_tools(cls):
+		return cls.check_smbclient() and cls.check_lpadmin()
 
 	def pretty_name(self, name):
 		parts = name.split('-')
@@ -234,7 +250,8 @@ if __name__ == '__main__':
 
 	args = parser.parse_args()
 
-	AUPrint.check_tools()
+	if not AUPrint.check_tools():
+		exit(1)
 
 	DEBUG = args.debug
 

@@ -4,7 +4,7 @@ Allows you to setup Aarhus University's printers on their `print.uni.au.dk` serv
 
 For other possible ways of printing on Aarhus University's printers see https://matfystutor.dk/wiki/Printere (danish)
 
-Requires CUPS, samba and python3 to work.
+Requires CUPS, smbclient and python3 to work.
 
 Additionally your user must have permissions to add printers using `lpadmin`.
 
