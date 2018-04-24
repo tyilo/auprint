@@ -118,8 +118,9 @@ class AUPrint:
 			print('Error: smbclient command is not available, try installing smbclient', file=stderr)
 		else:
 			p = run(['smbclient'], stderr=PIPE)
-			if p.stderr.startswith(b'Usage:'):
-				return True
+			for l in p.stderr.split(b'\n'):
+				if l.startswith(b'Usage:'):
+					return True
 
 			stderr.buffer.write(p.stderr)
 			print('Error: smbclient doesn\'t seem to work, make sure /etc/samba/smb.conf exists', file=stderr)
