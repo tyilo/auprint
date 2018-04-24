@@ -261,7 +261,7 @@ if __name__ == '__main__':
 	logged_in = False
 	while not logged_in:
 		while not auth.username:
-			auth.username = input('AUID: ').strip().lower()
+			auth.username = input('AUID (au' + 'X' * 6 + '): ').strip().lower()
 			if not auth.username.startswith('au'):
 				auth.username = None
 
