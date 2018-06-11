@@ -79,7 +79,8 @@ class PrinterNotFoundError(BaseException):
 class AUPrint:
 	HOST = 'print.uni.au.dk'
 	IP = socket.gethostbyname(HOST)
-	GENERIC_PPD = '/usr/share/ppd/cupsfilters/Generic-PDF_Printer-PDF.ppd'
+	PPD_PATH = '/usr/share/ppd'
+	GENERIC_PPD = PPD_PATH + '/cupsfilters/Generic-PDF_Printer-PDF.ppd'
 	DOMAIN = 'uni'
 	BUILDING_NAMES = {
 		'1530': 'matematik',
@@ -227,6 +228,23 @@ class AUPrint:
 		else:
 			raise PrinterNotFoundError()
 
+	def set_option(self, name, key, value):
+		check_call(['lpadmin', '-p', name, '-o', '{}={}'.format(key, value)])
+
+	def find_ppd(self, printer_type):
+		try:
+			output = check_output(['lpinfo', '--product', printer_type, '--exclude-schemes', 'everywhere', '-m'], encoding='utf-8')
+			# TODO: Currently we just return the first match
+			path = output.split()[0]
+
+			prefix = 'lsb/usr/'
+			if path.startswith(prefix):
+				path = self.PPD_PATH + '/' + path[len(prefix):]
+			return path
+		except CalledProcessError:
+			# Nothing found
+			return None
+
 
 def print_rows(rows, sep='  '):
 	maxlen = defaultdict(int)
@@ -276,6 +294,7 @@ if __name__ == '__main__':
 			auth.username = None
 			auth.password = None
 
+	print(auprint.find_ppd('xerox'))
 	printers = auprint.printers
 
 	if args.update_passwords:
@@ -323,6 +342,7 @@ if __name__ == '__main__':
 				exit()
 
 			printer = printer_rid[opt]
+			printer_description = matched_printers[printer]
 			name = auprint.pretty_name(printer)
 
 			print()
@@ -331,11 +351,32 @@ if __name__ == '__main__':
 			if custom_name:
 				name = custom_name
 
-			ppd = None
-			custom_ppd = input('PPD file [generic]: ').strip()
+			ppd = auprint.find_ppd(printer_description)
+			custom_ppd = input('PPD file [{}]: '.format(ppd or 'generic')).strip()
 			if custom_ppd:
 				ppd = custom_ppd
 
 			auprint.install_printer(printer, name, ppd)
+
+			# TODO: Check if PPD supports it
+			papersize = input('Paper size [A4]: ').strip()
+			if not papersize:
+				papersize = 'A4'
+			auprint.set_option(name, 'PageSize', papersize)
+
+			duplex = input('Duplex printing [Yn]: ').strip()
+			if not duplex or duplex.lower() == 'y':
+				duplex_type = 'DuplexNoTumble'
+			else:
+				duplex_type = 'None'
+			auprint.set_option(name, 'Duplex', duplex_type)
+
+			stapling = input('Portrait stapling [Yn]: ').strip()
+			if not stapling or stapling.lower() == 'y':
+				staple_location = 'SinglePortrait'
+			else:
+				staple_location = 'None'
+			auprint.set_option(name, 'StapleLocation', staple_location)
+
 
 			print('Successfully added printer %s as %s' % (printer, name))
