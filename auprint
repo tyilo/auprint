@@ -76,9 +76,19 @@ class PrinterNotFoundError(BaseException):
 	pass
 
 
+def gethostbyname(host, fallback=None):
+	try:
+		return socket.gethostbyname(host)
+	except socket.gaierror as e:
+		if e.errno == -2 and fallback != None:
+			print('Using fallback host {} for {}'.format(fallback, host))
+			return fallback
+		raise
+
+
 class AUPrint:
 	HOST = 'print.uni.au.dk'
-	IP = socket.gethostbyname(HOST)
+	IP = gethostbyname(HOST, '10.88.1.141')
 	PPD_PATH = '/usr/share/ppd'
 	GENERIC_PPD = PPD_PATH + '/cupsfilters/Generic-PDF_Printer-PDF.ppd'
 	DOMAIN = 'uni'
