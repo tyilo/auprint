@@ -25,3 +25,9 @@ sudo gpasswd lpadmin -a "$(id -un)"
 ```
 
 After adding yourself to the group, you will need to logout and login again to make the changes take effect.
+
+
+TODO
+==
+
+- Use pycups instead of using cups CLI for doing stuff
