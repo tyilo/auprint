@@ -87,8 +87,8 @@ def gethostbyname(host, fallback=None):
 
 
 class AUPrint:
-	HOST = 'print.uni.au.dk'
-	IP = gethostbyname(HOST, '10.88.1.141')
+	HOST = 'prt11.uni.au.dk'
+	IP = gethostbyname(HOST, '10.83.17.147')
 	PPD_PATH = '/usr/share/ppd'
 	GENERIC_PPD = PPD_PATH + '/cupsfilters/Generic-PDF_Printer-PDF.ppd'
 	DOMAIN = 'uni'
