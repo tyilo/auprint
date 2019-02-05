@@ -1,6 +1,6 @@
 # auprint
 
-Allows you to setup Aarhus University's printers on their `print.uni.au.dk` server.
+Allows you to setup Aarhus University's printers on their `prt11.uni.au.dk` server.
 
 For other possible ways of printing on Aarhus University's printers see https://matfystutor.dk/wiki/Printere (danish)
 
