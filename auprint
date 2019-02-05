@@ -4,7 +4,7 @@ from sys import exit, stderr
 from os import environ
 from collections import defaultdict
 import socket
-from subprocess import check_call, check_output, run, CalledProcessError, DEVNULL, PIPE
+from subprocess import check_call, check_output, run, CalledProcessError, PIPE
 from getpass import getpass
 from urllib.parse import quote
 import argparse
@@ -240,6 +240,28 @@ class AUPrint:
 
 	def set_option(self, name, key, value):
 		check_call(['lpadmin', '-p', name, '-o', '{}={}'.format(key, value)])
+
+	@classmethod
+	def get_options(cls, name):
+		output = check_output(['lpoptions', '-p', name, '-l'], encoding='utf-8')
+		options = []
+		for l in output.splitlines():
+			optname, choices = l.split(':')
+			choices = choices.split()
+			default = None
+			for i, v in enumerate(choices):
+				if v[0] == '*':
+					default = choices[i] = v[1:]
+
+			optname, verbose = optname.split('/')
+			options.append({
+				'name': optname,
+				'verbose_name': verbose,
+				'default': default,
+				'options': choices,
+			})
+
+		return options
 
 	def find_ppd(self, printer_type):
 		try:
