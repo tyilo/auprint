@@ -326,7 +326,6 @@ if __name__ == '__main__':
 			auth.username = None
 			auth.password = None
 
-	print(auprint.find_ppd('xerox'))
 	printers = auprint.printers
 
 	if args.update_passwords:
