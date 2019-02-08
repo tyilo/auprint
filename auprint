@@ -382,10 +382,9 @@ if __name__ == '__main__':
 			if custom_name:
 				name = custom_name
 
-			ppd = auprint.find_ppd(printer_description)
-			custom_ppd = input('PPD file [{}]: '.format(ppd or 'generic')).strip()
-			if custom_ppd:
-				ppd = custom_ppd
+			ppd = input('PPD file [{}]: '.format('generic')).strip()
+			if not ppd:
+				ppd = None
 
 			auprint.install_printer(printer, name, ppd)
 
