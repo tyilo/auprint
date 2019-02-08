@@ -12,6 +12,7 @@ from pathlib import Path
 from itertools import chain
 import random
 from shutil import which
+import time
 
 try:
 	import keyring
@@ -103,6 +104,7 @@ class AUPrint:
 	IP = gethostbyname(HOST, '10.83.17.147')
 	PPD_PATH = '/usr/share/ppd'
 	GENERIC_PPD = PPD_PATH + '/cupsfilters/Generic-PDF_Printer-PDF.ppd'
+	TEST_PAGE = '/usr/share/cups/data/testprint'
 	DOMAIN = 'uni'
 	BUILDING_NAMES = {
 		'1530': 'matematik',
@@ -229,6 +231,9 @@ class AUPrint:
 		except CalledProcessError:
 			return []
 
+	def local_printer_names(self):
+		return (p[1] for p in self.get_local_printers())
+
 	def install_printer(self, name, install_name, ppd=None):
 		if ppd == None:
 			ppd = self.GENERIC_PPD
@@ -246,7 +251,12 @@ class AUPrint:
 
 	def print(self, name, f):
 		if name in self.local_printer_names():
-			check_call(['lpr', '-E', '-P', name, f])
+			out = check_output(['lp', '-E', '-d', name, f], encoding='utf-8').strip()
+			prefix = 'request id is '
+			suffix = ' (1 file(s))'
+			assert out.startswith(prefix)
+			assert out.endswith(suffix)
+			return out[len(prefix):-len(suffix)]
 		else:
 			raise PrinterNotFoundError()
 
@@ -288,6 +298,50 @@ class AUPrint:
 		except CalledProcessError:
 			# Nothing found
 			return None
+
+
+	def print_test_page(self, name):
+		return self.print(name, self.TEST_PAGE)
+
+
+	def test_printer(self, name):
+		job_id = self.print_test_page(name)
+
+		while True:
+			time.sleep(0.1)
+
+			out = check_output(['lpstat', '-l', '-P', name], encoding='utf-8')
+
+			status = {}
+			lines = out.splitlines()
+			for i in range(len(lines)):
+				if lines[i].startswith(job_id):
+					i += 1
+					while i < len(lines) and lines[i].startswith(' '):
+						parts = lines[i].strip().split(': ')
+						if len(parts) == 2:
+							status[parts[0]] = parts[1]
+
+						i += 1
+
+					break
+			else:
+				print('Test page probably printed successfully')
+				break
+
+			if 'Status' in status:
+				s = status['Status']
+				print('Status:', s)
+				print('Alerts:', status['Alerts'])
+
+				status_code = s.split()[-1]
+
+				if status_code == 'NT_STATUS_LOGON_FAILURE':
+					print('This probably means that the server doesn\'t recognize your username/password')
+				elif status_code == 'NT_STATUS_ACCESS_DENIED':
+					print('')
+
+				break
 
 
 def print_rows(rows, sep='  '):
@@ -426,3 +480,7 @@ if __name__ == '__main__':
 
 
 			print('Successfully added printer %s as %s' % (printer, name))
+
+			print_test_page = input('Print test page [yN]? ').strip()
+			if print_test_page.lower() == 'y':
+				auprint.test_printer(name)
