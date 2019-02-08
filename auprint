@@ -2,7 +2,7 @@
 
 from sys import exit, stderr
 from os import environ
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 import socket
 from subprocess import check_call, check_output, run, CalledProcessError, PIPE
 from getpass import getpass
@@ -310,6 +310,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Manages installed printers at AU')
 	parser.add_argument('--update-passwords', action='store_true', help='Update passwords used for printers')
 	parser.add_argument('--debug', action='store_true', help='Print debug info')
+	parser.add_argument('--no-save', action='store_true', help='Disables using saved authentication info')
 
 	args = parser.parse_args()
 
@@ -318,7 +319,10 @@ if __name__ == '__main__':
 
 	DEBUG = args.debug
 
-	auth = LocalAuth('auid.txt')
+	if args.no_save:
+		auth = namedtuple('FakeAuth', ['username', 'password'])(None, None)
+	else:
+		auth = LocalAuth('auid.txt')
 
 	logged_in = False
 	while not logged_in:
