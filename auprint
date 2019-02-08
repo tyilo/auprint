@@ -28,6 +28,18 @@ def debugprint(*args, **kwargs):
 	if DEBUG:
 		print(*args, **kwargs)
 
+def debugprint_f(f):
+	def wrapped(*args, **kwargs):
+		cmd = args[0]
+		debugprint(cmd[0], *[repr(arg) for arg in cmd[1:]])
+		return f(*args, **kwargs)
+
+	return wrapped
+
+DEBUG_FUNCTIONS = [check_call, check_output, run]
+for f in DEBUG_FUNCTIONS:
+	globals()[f.__name__] = debugprint_f(f)
+
 
 class LocalAuth:
 	def __init__(self, filename):
