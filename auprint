@@ -243,6 +243,9 @@ class AUPrint:
 		else:
 			raise PrinterNotFoundError()
 
+		# Make sure we don't get lp: Unauthorized error when printing
+		self.set_option(install_name, 'auth-info-required', 'none')
+
 	def delete_printer(self, name):
 		if name in self.local_printer_names():
 			check_call(['lpadmin', '-x', name])
