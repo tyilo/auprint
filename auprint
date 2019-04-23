@@ -377,7 +377,11 @@ if __name__ == '__main__':
 	DEBUG = args.debug
 
 	if args.no_save:
-		auth = namedtuple('FakeAuth', ['username', 'password'])(None, None)
+		class FakeAuth:
+			__slots__ = ('username', 'password')
+		auth = FakeAuth()
+		auth.username = None
+		auth.password = None
 	else:
 		auth = LocalAuth('auid.txt')
 
