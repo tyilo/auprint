@@ -31,3 +31,4 @@ TODO
 ==
 
 - Use pycups instead of using cups CLI for doing stuff
+- Maybe use https://munki.au.dk/public/printer_info.plist instead of `smbclient` for listing printers
