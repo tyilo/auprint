@@ -1,497 +1,576 @@
 #!/usr/bin/env python3
 
-from sys import exit, stderr
-from os import environ
-from collections import defaultdict, namedtuple
-import socket
-from subprocess import check_call, check_output, run, CalledProcessError, PIPE
-from getpass import getpass
-from urllib.parse import quote
 import argparse
-from pathlib import Path
-from itertools import chain
 import random
-from shutil import which
+import socket
 import time
+from collections import defaultdict, namedtuple
+from getpass import getpass
+from itertools import chain
+from os import environ
+from pathlib import Path
+from shutil import which
+from subprocess import PIPE, CalledProcessError, check_call, check_output, run
+from sys import exit, stderr
+from urllib.parse import quote
 
 try:
-	import keyring
+    import keyring
 except ImportError:
-	print('''To avoid having to enter your password every time you use auprint
-install the python keyring module using `pip install keyring`.''', file=stderr)
-	keyring = None
+    print(
+        """To avoid having to enter your password every time you use auprint
+install the python keyring module using `pip install keyring`.""",
+        file=stderr,
+    )
+    keyring = None
 
 
 DEBUG = False
 
 
 def debugprint(*args, **kwargs):
-	if DEBUG:
-		print(*args, **kwargs)
+    if DEBUG:
+        print(*args, **kwargs)
+
 
 def debugprint_f(f):
-	def wrapped(*args, **kwargs):
-		cmd = args[0]
-		debugprint(cmd[0], *[repr(arg) for arg in cmd[1:]])
-		return f(*args, **kwargs)
+    def wrapped(*args, **kwargs):
+        cmd = args[0]
+        debugprint(cmd[0], *[repr(arg) for arg in cmd[1:]])
+        return f(*args, **kwargs)
 
-	return wrapped
+    return wrapped
+
 
 DEBUG_FUNCTIONS = [check_call, check_output, run]
 for f in DEBUG_FUNCTIONS:
-	globals()[f.__name__] = debugprint_f(f)
+    globals()[f.__name__] = debugprint_f(f)
 
 
 class LocalAuth:
-	def __init__(self, filename):
-		self.filename = filename
-		try:
-			with open(filename) as f:
-				self.username = f.read().strip()
-		except IOError:
-			self.username = None
+    def __init__(self, filename):
+        self.filename = filename
+        try:
+            with open(filename) as f:
+                self.username = f.read().strip()
+        except IOError:
+            self.username = None
 
-		if keyring:
-			self.password = keyring.get_password('auprint', 'auid')
-		else:
-			self.password = None
+        if keyring:
+            self.password = keyring.get_password("auprint", "auid")
+        else:
+            self.password = None
 
-	def __setattr__(self, key, value):
-		super().__setattr__(key, value)
+    def __setattr__(self, key, value):
+        super().__setattr__(key, value)
 
-		if key == 'username':
-			try:
-				if value == None:
-					Path(self.filename).unlink()
-				else:
-					with open(self.filename, 'w') as f:
-						f.write(self.username)
-			except IOError:
-				pass
-		elif key == 'password':
-			if not keyring:
-				return
+        if key == "username":
+            try:
+                if value == None:
+                    Path(self.filename).unlink()
+                else:
+                    with open(self.filename, "w") as f:
+                        f.write(self.username)
+            except IOError:
+                pass
+        elif key == "password":
+            if not keyring:
+                return
 
-			if value == None:
-				try:
-					keyring.delete_password('auprint', 'auid')
-				except keyring.errors.PasswordDeleteError:
-					pass
-			else:
-				keyring.set_password('auprint', 'auid', value)
+            if value == None:
+                try:
+                    keyring.delete_password("auprint", "auid")
+                except keyring.errors.PasswordDeleteError:
+                    pass
+            else:
+                keyring.set_password("auprint", "auid", value)
 
 
 class AUAuthenticationError(BaseException):
-	pass
+    pass
 
 
 class PrinterNotFoundError(BaseException):
-	pass
+    pass
 
 
 def gethostbyname(host, fallback=None):
-	try:
-		return socket.gethostbyname(host)
-	except socket.gaierror as e:
-		if e.errno == -2 and fallback != None:
-			print('Using fallback host {} for {}'.format(fallback, host))
-			return fallback
-		raise
+    try:
+        return socket.gethostbyname(host)
+    except socket.gaierror as e:
+        if e.errno == -2 and fallback != None:
+            print("Using fallback host {} for {}".format(fallback, host))
+            return fallback
+        raise
 
 
 class AUPrint:
-	HOST = 'prt11.uni.au.dk'
-	IP = gethostbyname(HOST, '10.83.17.147')
-	PPD_PATH = '/usr/share/ppd'
-	GENERIC_PPD = PPD_PATH + '/cupsfilters/Generic-PDF_Printer-PDF.ppd'
-	TEST_PAGE = '/usr/share/cups/data/testprint'
-	DOMAIN = 'uni'
-	BUILDING_NAMES = {
-		'1530': 'matematik',
-		'5335': 'nygaard',
-		'5340': 'babbage',
-		'5341': 'turing',
-		'5342': 'ada',
-		'5343': 'bush',
-		'5344': 'benjamin',
-		'5345': 'dreyer',
-		'5346': 'hopper',
-		'5347': 'wiener',
-		'5365': 'stibitz',
-	}
-	EXTRA_BUILDING_NAMES = {
-		'5343': 'studiecafeen',
-	}
-	BUILDING_NUMBERS = {v: k for k, v in chain(BUILDING_NAMES.items(), EXTRA_BUILDING_NAMES.items())}
-
-	auid = None
-	password = None
-	printers = None
-
-	def __init__(self, auid, password):
-		self.auid = auid
-		self.password = password
-
-		try:
-			self.printers = self.get_remote_printer_list()
-		except CalledProcessError:
-			raise AUAuthenticationError()
-
-	@classmethod
-	def check_smbclient(cls):
-		if not which('smbclient'):
-			print('Error: smbclient command is not available, try installing smbclient', file=stderr)
-		else:
-			samba_dir = Path('/etc/samba')
-			samba_conf = samba_dir / 'smb.conf'
-			if not samba_conf.exists():
-				print(f'The file {samba_conf} does not exist. Trying to create it:')
-				check_call(['sudo', 'sh', '-c', f'mkdir -p {samba_dir} && touch {samba_conf}'])
-				print('Done.')
-
-			p = run(['smbclient'], stderr=PIPE)
-			for l in p.stderr.split(b'\n'):
-				if l.startswith(b'Usage:'):
-					return True
-
-			stderr.buffer.write(p.stderr)
-			print('Error: smbclient doesn\'t seem to work, make sure /etc/samba/smb.conf exists', file=stderr)
-
-		return False
-
-	@classmethod
-	def check_lpadmin(cls):
-		if not which('lpadmin'):
-			print('Error: lpadmin command is not available, try installing CUPS')
-		else:
-			digits = 10
-			printer_name = '__auprint_test_%s' % random.randrange(10**digits, 10**(digits + 1))
-			try:
-				check_call(['lpadmin', '-p', printer_name, '-v', 'smb://example.org/auprint_test'])
-				return True
-			except CalledProcessError:
-				print('Error: You don\'t seem to be able to use lpadmin:', file=stderr)
-				print('- If you\'re using Arch Linux make sure you are in the group "sys"', file=stderr)
-				print('- If you\'re using Ubuntu make sure you are in the group "lpadmin"', file=stderr)
-			finally:
-				check_call(['lpadmin', '-x', printer_name])
-
-		return False
-
-	@classmethod
-	def check_tools(cls):
-		return cls.check_smbclient() and cls.check_lpadmin()
-
-	def pretty_name(self, name):
-		parts = name.split('-')
-		if len(parts) == 1:
-			return name
-
-		building = self.BUILDING_NAMES.get(parts[0], parts[0])
-		number = parts[1]
-
-		return '%s-%s' % (building, number)
-
-	def get_remote_printer_list(self):
-		new_env = environ.copy()
-		new_env['PASSWD'] = self.password
-		out = str(check_output(['smbclient', '-I', self.HOST, '-L', self.HOST, '-U',
-								'{}\\{}'.format(self.DOMAIN, self.auid)], env=new_env), 'utf-8')
-		debugprint(out)
-		printers = {}
-		for l in out.split('\n'):
-			if not l.startswith('\t'):
-				continue
-
-			parts = l.strip().split(maxsplit=2)
-			if len(parts) != 3:
-				continue
-
-			name, typ, description = parts
-			if typ != 'Printer':
-				continue
-
-			printers[name] = description
-
-		return printers
-
-	def printer_url(self, name):
-		return 'smb://{}\\{}:{}@{}/{}'.format(self.DOMAIN, self.auid, quote(self.password, safe=''), self.IP, name)
-
-	def update_authentication(self, name, install_name):
-		check_call(['lpadmin', '-p', install_name, '-v', self.printer_url(name)])
-
-	def get_local_printers(self):
-		try:
-			out = str(check_output(['lpstat', '-v']), 'utf-8').strip()
-			printers = []
-			for l in out.split('\n'):
-				url = l.split()[-1]
-				if not url.startswith('smb://{}/'.format(self.IP)):
-					continue
-
-				name = url.split('/')[-1]
-				install_name = l.split()[2].split(':')[0]
-				printers.append((name, install_name))
-
-			return printers
-		except CalledProcessError:
-			return []
-
-	def local_printer_names(self):
-		return (p[1] for p in self.get_local_printers())
-
-	def install_printer(self, name, install_name, ppd=None):
-		if ppd == None:
-			ppd = self.GENERIC_PPD
-		if name in self.printers:
-			check_call(['lpadmin', '-p', install_name, '-E', '-P', ppd, '-v',
-			            self.printer_url(name)])
-		else:
-			raise PrinterNotFoundError()
-
-	def delete_printer(self, name):
-		if name in self.local_printer_names():
-			check_call(['lpadmin', '-x', name])
-		else:
-			raise PrinterNotFoundError()
-
-	def print(self, name, f):
-		if name in self.local_printer_names():
-			out = check_output(['lp', '-E', '-d', name, f], encoding='utf-8').strip()
-			prefix = 'request id is '
-			suffix = ' (1 file(s))'
-			assert out.startswith(prefix)
-			assert out.endswith(suffix)
-			return out[len(prefix):-len(suffix)]
-		else:
-			raise PrinterNotFoundError()
-
-	def set_option(self, name, key, value):
-		check_call(['lpadmin', '-p', name, '-o', '{}={}'.format(key, value)])
-
-	@classmethod
-	def get_options(cls, name):
-		output = check_output(['lpoptions', '-p', name, '-l'], encoding='utf-8')
-		options = []
-		for l in output.splitlines():
-			optname, choices = l.split(':')
-			choices = choices.split()
-			default = None
-			for i, v in enumerate(choices):
-				if v[0] == '*':
-					default = choices[i] = v[1:]
-
-			optname, verbose = optname.split('/')
-			options.append({
-				'name': optname,
-				'verbose_name': verbose,
-				'default': default,
-				'options': choices,
-			})
-
-		return options
-
-	def find_ppd(self, printer_type):
-		try:
-			output = check_output(['lpinfo', '--product', printer_type, '--exclude-schemes', 'everywhere', '-m'], encoding='utf-8')
-			# TODO: Currently we just return the first match
-			path = output.split()[0]
-
-			prefix = 'lsb/usr/'
-			if path.startswith(prefix):
-				path = self.PPD_PATH + '/' + path[len(prefix):]
-			return path
-		except CalledProcessError:
-			# Nothing found
-			return None
-
-
-	def print_test_page(self, name):
-		return self.print(name, self.TEST_PAGE)
-
-
-	def test_printer(self, name):
-		job_id = self.print_test_page(name)
-
-		while True:
-			time.sleep(0.1)
-
-			out = check_output(['lpstat', '-l', '-P', name], encoding='utf-8')
-
-			status = {}
-			lines = out.splitlines()
-			for i in range(len(lines)):
-				if lines[i].startswith(job_id):
-					i += 1
-					while i < len(lines) and lines[i].startswith('\t'):
-						parts = lines[i].strip().split(': ', maxsplit=1)
-						if len(parts) == 2:
-							status[parts[0]] = parts[1]
-
-						i += 1
-
-					break
-			else:
-				print('Test page probably printed successfully')
-				break
-
-			if 'Status' in status:
-				s = status['Status']
-				print('Status:', s)
-				print('Alerts:', status['Alerts'])
-
-				status_code = s.split()[-1]
-
-				if status_code == 'NT_STATUS_LOGON_FAILURE':
-					print('This probably means that the server doesn\'t recognize your username/password')
-				elif status_code == 'NT_STATUS_ACCESS_DENIED':
-					print('')
-
-				break
-
-
-def print_rows(rows, sep='  '):
-	maxlen = defaultdict(int)
-	for row in rows:
-		for i, v in enumerate(row):
-			maxlen[i] = max(maxlen[i], len(str(v)))
-
-	for row in rows:
-		for i, v in enumerate(row):
-			if i == len(row) - 1:
-				print(str(v))
-			else:
-				print(str(v).ljust(maxlen[i]), end=sep)
-
-	# print('(%s)\t%s\t%s' % (i + 1, p, matched_printers[p]))
-
-
-if __name__ == '__main__':
-	parser = argparse.ArgumentParser(description='Manages installed printers at AU')
-	parser.add_argument('--update-passwords', action='store_true', help='Update passwords used for printers')
-	parser.add_argument('--debug', action='store_true', help='Print debug info')
-	parser.add_argument('--no-save', action='store_true', help='Disables using saved authentication info')
-
-	args = parser.parse_args()
-
-	if not AUPrint.check_tools():
-		exit(1)
-
-	DEBUG = args.debug
-
-	if args.no_save:
-		class FakeAuth:
-			__slots__ = ('username', 'password')
-		auth = FakeAuth()
-		auth.username = None
-		auth.password = None
-	else:
-		auth = LocalAuth('auid.txt')
-
-	logged_in = False
-	while not logged_in:
-		while not auth.username:
-			auth.username = input('AUID (au' + 'X' * 6 + '): ').strip().lower()
-			if not auth.username.startswith('au'):
-				auth.username = None
-
-		while not auth.password:
-			auth.password = getpass('AU password: ').strip()
-
-		try:
-			auprint = AUPrint(auth.username, auth.password)
-			logged_in = True
-		except AUAuthenticationError:
-			print('Invalid auid/password combination')
-			auth.username = None
-			auth.password = None
-
-	printers = auprint.printers
-
-	if args.update_passwords:
-		printers = auprint.get_local_printers()
-		for name, install_name in printers:
-			auprint.update_authentication(name, install_name)
-			print('Updated password for {} at {}'.format(name, install_name))
-	else:
-		known_buildings = sorted(AUPrint.BUILDING_NUMBERS.items(), key=lambda x: x[1])
-
-		print('Known building names:')
-		rows = []
-		for name, number in known_buildings:
-			rows.append(('', name, number))
-
-		print_rows(rows)
-
-		print()
-		building = input('Building number/name (empty for any): ').strip()
-		building_number = AUPrint.BUILDING_NUMBERS.get(building, building)
-
-		print()
-
-		matched_printers = {p: d for p, d in printers.items() if p.startswith(building_number)}
-		if len(matched_printers) == 0:
-			print('No printers found')
-		else:
-			print('Available printers: ')
-			rows = []
-			printer_rid = []
-			for i, p in enumerate(matched_printers):
-				rows.append(('(%s)' % (i + 1), p, matched_printers[p]))
-				printer_rid.append(p)
-
-			print_rows(rows)
-			print()
-			opt = input('Printer to install: ').strip()
-			try:
-				opt = int(opt)
-			except ValueError:
-				exit()
-
-			opt -= 1
-			if not (0 <= opt < len(matched_printers)):
-				exit()
-
-			printer = printer_rid[opt]
-			printer_description = matched_printers[printer]
-			name = auprint.pretty_name(printer)
-
-			print()
-			print('Selected', printer)
-			custom_name = input('Install name [%s]: ' % name).strip()
-			if custom_name:
-				name = custom_name
-
-			ppd = input('PPD file [{}]: '.format('generic')).strip()
-			if not ppd:
-				ppd = None
-
-			auprint.install_printer(printer, name, ppd)
-
-			# TODO: Check if PPD supports it
-			papersize = input('Paper size [A4]: ').strip()
-			if not papersize:
-				papersize = 'A4'
-			auprint.set_option(name, 'PageSize', papersize)
-
-			duplex = input('Duplex printing [Yn]: ').strip()
-			if not duplex or duplex.lower() == 'y':
-				duplex_type = 'DuplexNoTumble'
-			else:
-				duplex_type = 'None'
-			auprint.set_option(name, 'Duplex', duplex_type)
-
-			stapling = input('Portrait stapling [Yn]: ').strip()
-			if not stapling or stapling.lower() == 'y':
-				staple_location = 'SinglePortrait'
-			else:
-				staple_location = 'None'
-			auprint.set_option(name, 'StapleLocation', staple_location)
-
-
-			print('Successfully added printer %s as %s' % (printer, name))
-
-			print_test_page = input('Print test page [yN]? ').strip()
-			if print_test_page.lower() == 'y':
-				auprint.test_printer(name)
+    HOST = "prt11.uni.au.dk"
+    IP = gethostbyname(HOST, "10.83.17.147")
+    PPD_PATH = "/usr/share/ppd"
+    GENERIC_PPD = PPD_PATH + "/cupsfilters/Generic-PDF_Printer-PDF.ppd"
+    TEST_PAGE = "/usr/share/cups/data/testprint"
+    DOMAIN = "uni"
+    BUILDING_NAMES = {
+        "1530": "matematik",
+        "5335": "nygaard",
+        "5340": "babbage",
+        "5341": "turing",
+        "5342": "ada",
+        "5343": "bush",
+        "5344": "benjamin",
+        "5345": "dreyer",
+        "5346": "hopper",
+        "5347": "wiener",
+        "5365": "stibitz",
+    }
+    EXTRA_BUILDING_NAMES = {
+        "5343": "studiecafeen",
+    }
+    BUILDING_NUMBERS = {
+        v: k for k, v in chain(BUILDING_NAMES.items(), EXTRA_BUILDING_NAMES.items())
+    }
+
+    auid = None
+    password = None
+    printers = None
+
+    def __init__(self, auid, password):
+        self.auid = auid
+        self.password = password
+
+        try:
+            self.printers = self.get_remote_printer_list()
+        except CalledProcessError:
+            raise AUAuthenticationError()
+
+    @classmethod
+    def check_smbclient(cls):
+        if not which("smbclient"):
+            print(
+                "Error: smbclient command is not available, try installing smbclient",
+                file=stderr,
+            )
+        else:
+            samba_dir = Path("/etc/samba")
+            samba_conf = samba_dir / "smb.conf"
+            if not samba_conf.exists():
+                print(f"The file {samba_conf} does not exist. Trying to create it:")
+                check_call(
+                    ["sudo", "sh", "-c", f"mkdir -p {samba_dir} && touch {samba_conf}"]
+                )
+                print("Done.")
+
+            p = run(["smbclient"], stderr=PIPE)
+            for l in p.stderr.split(b"\n"):
+                if l.startswith(b"Usage:"):
+                    return True
+
+            stderr.buffer.write(p.stderr)
+            print(
+                "Error: smbclient doesn't seem to work, make sure /etc/samba/smb.conf exists",
+                file=stderr,
+            )
+
+        return False
+
+    @classmethod
+    def check_lpadmin(cls):
+        if not which("lpadmin"):
+            print("Error: lpadmin command is not available, try installing CUPS")
+        else:
+            digits = 10
+            printer_name = "__auprint_test_%s" % random.randrange(
+                10 ** digits, 10 ** (digits + 1)
+            )
+            try:
+                check_call(
+                    [
+                        "lpadmin",
+                        "-p",
+                        printer_name,
+                        "-v",
+                        "smb://example.org/auprint_test",
+                    ]
+                )
+                return True
+            except CalledProcessError:
+                print("Error: You don't seem to be able to use lpadmin:", file=stderr)
+                print(
+                    '- If you\'re using Arch Linux make sure you are in the group "sys"',
+                    file=stderr,
+                )
+                print(
+                    '- If you\'re using Ubuntu make sure you are in the group "lpadmin"',
+                    file=stderr,
+                )
+            finally:
+                check_call(["lpadmin", "-x", printer_name])
+
+        return False
+
+    @classmethod
+    def check_tools(cls):
+        return cls.check_smbclient() and cls.check_lpadmin()
+
+    def pretty_name(self, name):
+        parts = name.split("-")
+        if len(parts) == 1:
+            return name
+
+        building = self.BUILDING_NAMES.get(parts[0], parts[0])
+        number = parts[1]
+
+        return "%s-%s" % (building, number)
+
+    def get_remote_printer_list(self):
+        new_env = environ.copy()
+        new_env["PASSWD"] = self.password
+        out = str(
+            check_output(
+                [
+                    "smbclient",
+                    "-I",
+                    self.HOST,
+                    "-L",
+                    self.HOST,
+                    "-U",
+                    "{}\\{}".format(self.DOMAIN, self.auid),
+                ],
+                env=new_env,
+            ),
+            "utf-8",
+        )
+        debugprint(out)
+        printers = {}
+        for l in out.split("\n"):
+            if not l.startswith("\t"):
+                continue
+
+            parts = l.strip().split(maxsplit=2)
+            if len(parts) != 3:
+                continue
+
+            name, typ, description = parts
+            if typ != "Printer":
+                continue
+
+            printers[name] = description
+
+        return printers
+
+    def printer_url(self, name):
+        return "smb://{}\\{}:{}@{}/{}".format(
+            self.DOMAIN, self.auid, quote(self.password, safe=""), self.IP, name
+        )
+
+    def update_authentication(self, name, install_name):
+        check_call(["lpadmin", "-p", install_name, "-v", self.printer_url(name)])
+
+    def get_local_printers(self):
+        try:
+            out = str(check_output(["lpstat", "-v"]), "utf-8").strip()
+            printers = []
+            for l in out.split("\n"):
+                url = l.split()[-1]
+                if not url.startswith("smb://{}/".format(self.IP)):
+                    continue
+
+                name = url.split("/")[-1]
+                install_name = l.split()[2].split(":")[0]
+                printers.append((name, install_name))
+
+            return printers
+        except CalledProcessError:
+            return []
+
+    def local_printer_names(self):
+        return (p[1] for p in self.get_local_printers())
+
+    def install_printer(self, name, install_name, ppd=None):
+        if ppd == None:
+            ppd = self.GENERIC_PPD
+        if name in self.printers:
+            check_call(
+                [
+                    "lpadmin",
+                    "-p",
+                    install_name,
+                    "-E",
+                    "-P",
+                    ppd,
+                    "-v",
+                    self.printer_url(name),
+                ]
+            )
+        else:
+            raise PrinterNotFoundError()
+
+    def delete_printer(self, name):
+        if name in self.local_printer_names():
+            check_call(["lpadmin", "-x", name])
+        else:
+            raise PrinterNotFoundError()
+
+    def print(self, name, f):
+        if name in self.local_printer_names():
+            out = check_output(["lp", "-E", "-d", name, f], encoding="utf-8").strip()
+            prefix = "request id is "
+            suffix = " (1 file(s))"
+            assert out.startswith(prefix)
+            assert out.endswith(suffix)
+            return out[len(prefix) : -len(suffix)]
+        else:
+            raise PrinterNotFoundError()
+
+    def set_option(self, name, key, value):
+        check_call(["lpadmin", "-p", name, "-o", "{}={}".format(key, value)])
+
+    @classmethod
+    def get_options(cls, name):
+        output = check_output(["lpoptions", "-p", name, "-l"], encoding="utf-8")
+        options = []
+        for l in output.splitlines():
+            optname, choices = l.split(":")
+            choices = choices.split()
+            default = None
+            for i, v in enumerate(choices):
+                if v[0] == "*":
+                    default = choices[i] = v[1:]
+
+            optname, verbose = optname.split("/")
+            options.append(
+                {
+                    "name": optname,
+                    "verbose_name": verbose,
+                    "default": default,
+                    "options": choices,
+                }
+            )
+
+        return options
+
+    def find_ppd(self, printer_type):
+        try:
+            output = check_output(
+                [
+                    "lpinfo",
+                    "--product",
+                    printer_type,
+                    "--exclude-schemes",
+                    "everywhere",
+                    "-m",
+                ],
+                encoding="utf-8",
+            )
+            # TODO: Currently we just return the first match
+            path = output.split()[0]
+
+            prefix = "lsb/usr/"
+            if path.startswith(prefix):
+                path = self.PPD_PATH + "/" + path[len(prefix) :]
+            return path
+        except CalledProcessError:
+            # Nothing found
+            return None
+
+    def print_test_page(self, name):
+        return self.print(name, self.TEST_PAGE)
+
+    def test_printer(self, name):
+        job_id = self.print_test_page(name)
+
+        while True:
+            time.sleep(0.1)
+
+            out = check_output(["lpstat", "-l", "-P", name], encoding="utf-8")
+
+            status = {}
+            lines = out.splitlines()
+            for i in range(len(lines)):
+                if lines[i].startswith(job_id):
+                    i += 1
+                    while i < len(lines) and lines[i].startswith("\t"):
+                        parts = lines[i].strip().split(": ", maxsplit=1)
+                        if len(parts) == 2:
+                            status[parts[0]] = parts[1]
+
+                        i += 1
+
+                    break
+            else:
+                print("Test page probably printed successfully")
+                break
+
+            if "Status" in status:
+                s = status["Status"]
+                print("Status:", s)
+                print("Alerts:", status["Alerts"])
+
+                status_code = s.split()[-1]
+
+                if status_code == "NT_STATUS_LOGON_FAILURE":
+                    print(
+                        "This probably means that the server doesn't recognize your username/password"
+                    )
+                elif status_code == "NT_STATUS_ACCESS_DENIED":
+                    print("")
+
+                break
+
+
+def print_rows(rows, sep="  "):
+    maxlen = defaultdict(int)
+    for row in rows:
+        for i, v in enumerate(row):
+            maxlen[i] = max(maxlen[i], len(str(v)))
+
+    for row in rows:
+        for i, v in enumerate(row):
+            if i == len(row) - 1:
+                print(str(v))
+            else:
+                print(str(v).ljust(maxlen[i]), end=sep)
+
+    # print('(%s)\t%s\t%s' % (i + 1, p, matched_printers[p]))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Manages installed printers at AU")
+    parser.add_argument(
+        "--update-passwords",
+        action="store_true",
+        help="Update passwords used for printers",
+    )
+    parser.add_argument("--debug", action="store_true", help="Print debug info")
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Disables using saved authentication info",
+    )
+
+    args = parser.parse_args()
+
+    if not AUPrint.check_tools():
+        exit(1)
+
+    DEBUG = args.debug
+
+    if args.no_save:
+
+        class FakeAuth:
+            __slots__ = ("username", "password")
+
+        auth = FakeAuth()
+        auth.username = None
+        auth.password = None
+    else:
+        auth = LocalAuth("auid.txt")
+
+    logged_in = False
+    while not logged_in:
+        while not auth.username:
+            auth.username = input("AUID (au" + "X" * 6 + "): ").strip().lower()
+            if not auth.username.startswith("au"):
+                auth.username = None
+
+        while not auth.password:
+            auth.password = getpass("AU password: ").strip()
+
+        try:
+            auprint = AUPrint(auth.username, auth.password)
+            logged_in = True
+        except AUAuthenticationError:
+            print("Invalid auid/password combination")
+            auth.username = None
+            auth.password = None
+
+    printers = auprint.printers
+
+    if args.update_passwords:
+        printers = auprint.get_local_printers()
+        for name, install_name in printers:
+            auprint.update_authentication(name, install_name)
+            print("Updated password for {} at {}".format(name, install_name))
+    else:
+        known_buildings = sorted(AUPrint.BUILDING_NUMBERS.items(), key=lambda x: x[1])
+
+        print("Known building names:")
+        rows = []
+        for name, number in known_buildings:
+            rows.append(("", name, number))
+
+        print_rows(rows)
+
+        print()
+        building = input("Building number/name (empty for any): ").strip()
+        building_number = AUPrint.BUILDING_NUMBERS.get(building, building)
+
+        print()
+
+        matched_printers = {
+            p: d for p, d in printers.items() if p.startswith(building_number)
+        }
+        if len(matched_printers) == 0:
+            print("No printers found")
+        else:
+            print("Available printers: ")
+            rows = []
+            printer_rid = []
+            for i, p in enumerate(matched_printers):
+                rows.append(("(%s)" % (i + 1), p, matched_printers[p]))
+                printer_rid.append(p)
+
+            print_rows(rows)
+            print()
+            opt = input("Printer to install: ").strip()
+            try:
+                opt = int(opt)
+            except ValueError:
+                exit()
+
+            opt -= 1
+            if not (0 <= opt < len(matched_printers)):
+                exit()
+
+            printer = printer_rid[opt]
+            printer_description = matched_printers[printer]
+            name = auprint.pretty_name(printer)
+
+            print()
+            print("Selected", printer)
+            custom_name = input("Install name [%s]: " % name).strip()
+            if custom_name:
+                name = custom_name
+
+            ppd = input("PPD file [{}]: ".format("generic")).strip()
+            if not ppd:
+                ppd = None
+
+            auprint.install_printer(printer, name, ppd)
+
+            # TODO: Check if PPD supports it
+            papersize = input("Paper size [A4]: ").strip()
+            if not papersize:
+                papersize = "A4"
+            auprint.set_option(name, "PageSize", papersize)
+
+            duplex = input("Duplex printing [Yn]: ").strip()
+            if not duplex or duplex.lower() == "y":
+                duplex_type = "DuplexNoTumble"
+            else:
+                duplex_type = "None"
+            auprint.set_option(name, "Duplex", duplex_type)
+
+            stapling = input("Portrait stapling [Yn]: ").strip()
+            if not stapling or stapling.lower() == "y":
+                staple_location = "SinglePortrait"
+            else:
+                staple_location = "None"
+            auprint.set_option(name, "StapleLocation", staple_location)
+
+            print("Successfully added printer %s as %s" % (printer, name))
+
+            print_test_page = input("Print test page [yN]? ").strip()
+            if print_test_page.lower() == "y":
+                auprint.test_printer(name)
