@@ -142,6 +142,13 @@ class AUPrint:
 		if not which('smbclient'):
 			print('Error: smbclient command is not available, try installing smbclient', file=stderr)
 		else:
+			samba_dir = Path('/etc/samba')
+			samba_conf = samba_dir / 'smb.conf'
+			if not samba_conf.exists():
+				print(f'The file {samba_conf} does not exist. Trying to create it:')
+				check_call(['sudo', 'sh', '-c', f'mkdir -p {samba_dir} && touch {samba_conf}'])
+				print('Done.')
+
 			p = run(['smbclient'], stderr=PIPE)
 			for l in p.stderr.split(b'\n'):
 				if l.startswith(b'Usage:'):
