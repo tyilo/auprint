@@ -196,6 +196,7 @@ class AUPrint:
                 return True
             except CalledProcessError:
                 print("Error: You don't seem to be able to use lpadmin:", file=stderr)
+                print("Make sure that the org.cups.cupsd service is running and:")
                 print(
                     '- If you\'re using Arch Linux make sure you are in the group "sys"',
                     file=stderr,
