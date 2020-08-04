@@ -10,7 +10,8 @@ from itertools import chain
 from os import environ
 from pathlib import Path
 from shutil import which
-from subprocess import PIPE, CalledProcessError, check_call, check_output, run
+from subprocess import (DEVNULL, PIPE, CalledProcessError, check_call,
+                        check_output, run)
 from sys import exit, stderr
 from urllib.parse import quote
 
@@ -175,6 +176,16 @@ class AUPrint:
         return False
 
     @classmethod
+    def check_cups(cls):
+        try:
+            check_call(["systemctl", "status", "org.cups.cupsd"], stdout=DEVNULL)
+            return True
+        except CalledProcessError:
+            print("org.cups.cupsd service doesn't seem to be started", file=stderr)
+
+        return False
+
+    @classmethod
     def check_lpadmin(cls):
         if not which("lpadmin"):
             print("Error: lpadmin command is not available, try installing CUPS")
@@ -196,7 +207,6 @@ class AUPrint:
                 return True
             except CalledProcessError:
                 print("Error: You don't seem to be able to use lpadmin:", file=stderr)
-                print("Make sure that the org.cups.cupsd service is running and:")
                 print(
                     '- If you\'re using Arch Linux make sure you are in the group "sys"',
                     file=stderr,
@@ -212,7 +222,7 @@ class AUPrint:
 
     @classmethod
     def check_tools(cls):
-        return cls.check_smbclient() and cls.check_lpadmin()
+        return cls.check_smbclient() and cls.check_cups() and cls.check_lpadmin()
 
     def pretty_name(self, name):
         parts = name.split("-")
