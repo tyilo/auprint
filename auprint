@@ -178,10 +178,10 @@ class AUPrint:
     @classmethod
     def check_cups(cls):
         try:
-            check_call(["systemctl", "status", "org.cups.cupsd"], stdout=DEVNULL)
+            check_call(["systemctl", "status", "cups"], stdout=DEVNULL)
             return True
         except CalledProcessError:
-            print("org.cups.cupsd service doesn't seem to be started", file=stderr)
+            print("The cups service doesn't seem to be started.", file=stderr)
 
         return False
 
