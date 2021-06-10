@@ -106,8 +106,7 @@ def gethostbyname(host, fallback=None):
 
 
 class AUPrint:
-    HOST = "prt11.uni.au.dk"
-    IP = gethostbyname(HOST, "10.83.17.147")
+    IP = gethostbyname("prt11.uni.au.dk", "10.83.17.147")
     PPD_PATH = "/usr/share/ppd"
     GENERIC_PPD = PPD_PATH + "/cupsfilters/Generic-PDF_Printer-PDF.ppd"
     TEST_PAGE = "/usr/share/cups/data/testprint"
@@ -242,9 +241,9 @@ class AUPrint:
                 [
                     "smbclient",
                     "-I",
-                    self.HOST,
+                    self.IP,
                     "-L",
-                    self.HOST,
+                    self.IP,
                     "-U",
                     "{}\\{}".format(self.DOMAIN, self.auid),
                 ],
