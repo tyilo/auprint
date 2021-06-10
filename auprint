@@ -175,6 +175,22 @@ class AUPrint:
         return False
 
     @classmethod
+    def check_smbclient_connection(cls):
+        new_env = environ.copy()
+        new_env["PASSWD"] = ""
+        p = run(["smbclient", "-L", cls.IP], stdout=PIPE, env=new_env)
+        if b"NT_STATUS_ACCESS_DENIED" in p.stdout:
+            return True
+
+        print("Error: Couldn't connect to print server with smbclient.", file=stderr)
+        print("Make sure you're on AU's network.", file=stderr)
+        print(
+            "If you're connecting using VPN make sure you are using https://remote.au.dk/AU-ACCESS",
+            file=stderr,
+        )
+        return False
+
+    @classmethod
     def check_cups(cls):
         try:
             check_call(["systemctl", "status", "cups"], stdout=DEVNULL)
@@ -221,7 +237,12 @@ class AUPrint:
 
     @classmethod
     def check_tools(cls):
-        return cls.check_smbclient() and cls.check_cups() and cls.check_lpadmin()
+        return (
+            cls.check_smbclient()
+            and cls.check_cups()
+            and cls.check_lpadmin()
+            and cls.check_smbclient_connection()
+        )
 
     def pretty_name(self, name):
         parts = name.split("-")
