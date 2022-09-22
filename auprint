@@ -178,8 +178,8 @@ class AUPrint:
     def check_smbclient_connection(cls):
         new_env = environ.copy()
         new_env["PASSWD"] = ""
-        p = run(["smbclient", "-L", cls.IP], stdout=PIPE, env=new_env)
-        if b"NT_STATUS_ACCESS_DENIED" in p.stdout:
+        p = run(["smbclient", "-L", cls.IP], stdin=DEVNULL, stdout=PIPE, env=new_env)
+        if b"NT_STATUS_ACCESS_DENIED" in p.stdout or b"NT_STATUS_NOT_SUPPORTED" in p.stdout:
             return True
 
         print("Error: Couldn't connect to print server with smbclient.", file=stderr)
